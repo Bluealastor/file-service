@@ -24,7 +24,7 @@ public class FileExplorerController {
     // Elenca i file nella cartella specificata, relativa al basePath configurato in YAML.
     // Usa GET perché non ci sono credenziali sensibili: il path locale è sicuro in query string
     @GetMapping("/local")
-    public List<FileMetadataResponse> listLocal(@RequestParam String path) {
+    public List<FileMetadataResponse> listLocal(@RequestParam(defaultValue = "") String path) {
         return localFileService.listFiles(path);
     }
 

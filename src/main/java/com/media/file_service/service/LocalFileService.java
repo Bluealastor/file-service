@@ -45,11 +45,12 @@ public class LocalFileService {
     // Il percorso fornito dal client viene risolto relativamente al basePath,
     // impedendo l'accesso a cartelle al di fuori di esso (path traversal)
     public List<FileMetadataResponse> listFiles(String relativePath) {
-        if (relativePath == null || relativePath.isBlank()) {
-            throw new BadRequestException("Il percorso non può essere vuoto");
-        }
-
         Path base = Paths.get(basePath).toAbsolutePath().normalize();
+
+        // Path vuoto o null = root: elenca direttamente il basePath
+        if (relativePath == null || relativePath.isBlank()) {
+            return listDirectory(base);
+        }
 
         // Rifiuta percorsi assoluti: Path.resolve() con argomento assoluto ignora base,
         // vanificando il controllo startsWith che segue
@@ -74,8 +75,12 @@ public class LocalFileService {
             throw new BadRequestException("Il percorso specificato non è una cartella");
         }
 
-        // Legge il contenuto della cartella (non ricorsivo, solo primo livello)
-        try (Stream<Path> stream = Files.list(target)) {
+        return listDirectory(target);
+    }
+
+    // Legge il contenuto di una cartella (non ricorsivo, solo primo livello)
+    private List<FileMetadataResponse> listDirectory(Path dir) {
+        try (Stream<Path> stream = Files.list(dir)) {
             return stream
                     .map(path -> buildMetadata(path))
                     .collect(Collectors.toList());
