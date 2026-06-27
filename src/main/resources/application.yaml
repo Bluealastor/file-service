@@ -1,0 +1,34 @@
+spring:
+  application:
+    name: file-service
+  servlet:
+    multipart:
+      # Dimensione massima per singolo file in upload
+      max-file-size: 10GB
+      # Dimensione massima totale della richiesta multipart
+      max-request-size: 10GB
+
+server:
+  port: 8082
+
+# Configurazione percorsi locali del NAS (da aggiornare al deploy su Unraid)
+file:
+  local:
+    # Percorso base da cui il servizio può navigare.
+    # In sviluppo: C:/nas-files  |  In Docker/Unraid: /nas-files (montato via volume)
+    base-path: ${FILE_LOCAL_BASE_PATH:C:/nas-files}
+  upload:
+    # Cartella di destinazione default per gli upload dal browser.
+    destination: ${FILE_UPLOAD_DESTINATION:C:/nas-files/uploads}
+
+# Percorso dell'eseguibile ExifTool (deve essere installato sul sistema)
+# Su Unraid nel container Docker: /usr/bin/exiftool
+exiftool:
+  path: ${EXIFTOOL_PATH:exiftool}
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
