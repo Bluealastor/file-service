@@ -89,8 +89,14 @@ public class LocalFileService {
         }
     }
 
-    // Costruisce il DTO FileMetadataResponse a partire da un Path
+    // Costruisce il DTO FileMetadataResponse a partire da un Path.
+    // fullPath è relativo al basePath — il client lo riusa come parametro ?path=
+    // per navigare nelle sottocartelle senza passare path assoluti.
     private FileMetadataResponse buildMetadata(Path path) {
+        Path base = Paths.get(basePath).toAbsolutePath().normalize();
+        // Percorso relativo al basePath (es. "Foto/2024" invece di "/nas-files/Foto/2024")
+        String relativePath = base.relativize(path.toAbsolutePath().normalize()).toString();
+
         try {
             boolean isDir = Files.isDirectory(path);
             long size = isDir ? 0 : Files.size(path);
@@ -102,12 +108,11 @@ public class LocalFileService {
 
             FileMetadataResponse.FileMetadataResponseBuilder builder = FileMetadataResponse.builder()
                     .fileName(path.getFileName().toString())
-                    .fullPath(path.toString())
+                    .fullPath(relativePath)
                     .size(size)
                     .lastModified(lastModified)
                     .fileType(fileType);
 
-            // Aggiunge metadati estesi solo per foto e video (chiamata a MetadataService)
             if (fileType == FileType.IMAGE || fileType == FileType.VIDEO) {
                 builder.metadata(metadataService.extract(path));
             }
@@ -115,14 +120,11 @@ public class LocalFileService {
             return builder.build();
 
         } catch (IOException e) {
-            // Se non riusciamo a leggere un file specifico, lo includiamo comunque
-            // nella lista ma con dati minimi, senza bloccare l'intera risposta
             return FileMetadataResponse.builder()
                     .fileName(path.getFileName().toString())
-                    .fullPath(path.toString())
+                    .fullPath(relativePath)
                     .fileType(FileType.OTHER)
                     .build();
-
         }
     }
 
