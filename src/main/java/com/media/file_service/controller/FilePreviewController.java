@@ -64,6 +64,9 @@ public class FilePreviewController {
         if (lower.endsWith(".avi"))  return "video/x-msvideo";
         if (lower.endsWith(".m4v"))  return "video/x-m4v";
         if (lower.endsWith(".wmv"))  return "video/x-ms-wmv";
+        // Formati Insta360: il container è MP4-compatibile, i browser lo gestiscono come video/mp4
+        if (lower.endsWith(".insv")) return "video/mp4";
+        if (lower.endsWith(".lrv"))  return "video/mp4";
         return "application/octet-stream";
     }
 }
