@@ -2,8 +2,6 @@ package com.media.file_service.controller;
 
 import com.media.file_service.service.FileCopyService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.core.io.FileSystemResource;
-import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpRange;
 import org.springframework.http.HttpStatus;
@@ -12,7 +10,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -20,75 +17,78 @@ import java.util.List;
 
 // Controller per lo streaming inline di file (anteprima foto e video).
 //
-// Supporta HTTP Range requests (RFC 7233) per lo streaming video senza caricare
-// il file in memoria — usa StreamingResponseBody per scrivere direttamente sullo stream:
-//   - Senza Range → 200 OK, file completo (via FileSystemResource, Spring gestisce lo stream)
-//   - Con Range   → 206 Partial Content, solo la porzione richiesta (chunked stream)
-//
-// Questo è essenziale per seeking, buffering intelligente e qualità video stabile.
+// Usa StreamingResponseBody per entrambi i casi (file completo e range):
+// scrive direttamente sull'OutputStream HTTP senza caricare nulla in memoria.
+// Supporta HTTP Range requests (RFC 7233) → seeking video preciso nel browser.
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/files")
 public class FilePreviewController {
 
+    private static final int BUFFER_SIZE = 64 * 1024; // 64 KB
+
     private final FileCopyService fileCopyService;
 
     @GetMapping("/preview")
-    public ResponseEntity<?> preview(
+    public ResponseEntity<StreamingResponseBody> preview(
             @RequestParam String path,
-            @RequestHeader HttpHeaders requestHeaders) throws IOException {
+            @RequestHeader HttpHeaders requestHeaders) throws Exception {
 
-        Path filePath   = fileCopyService.resolveDownloadPath(path);
-        long fileSize   = Files.size(filePath);
-        String mime     = detectContentType(filePath.getFileName().toString());
-        String disp     = "inline; filename=\"" + filePath.getFileName() + "\"";
+        Path filePath = fileCopyService.resolveDownloadPath(path);
+        long fileSize = Files.size(filePath);
+        String mime   = detectContentType(filePath.getFileName().toString());
+        String disp   = "inline; filename=\"" + filePath.getFileName() + "\"";
 
         List<HttpRange> ranges = requestHeaders.getRange();
 
         if (ranges.isEmpty()) {
-            // ── Richiesta completa: FileSystemResource streama efficientemente ──
-            Resource resource = new FileSystemResource(filePath);
+            // ── File completo (200 OK) ────────────────────────────────────────
+            StreamingResponseBody body = out -> {
+                try (InputStream is = Files.newInputStream(filePath)) {
+                    byte[] buf = new byte[BUFFER_SIZE];
+                    int read;
+                    while ((read = is.read(buf)) != -1) {
+                        out.write(buf, 0, read);
+                    }
+                }
+            };
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, disp)
                     .header(HttpHeaders.ACCEPT_RANGES, "bytes")
                     .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(fileSize))
                     .contentType(MediaType.parseMediaType(mime))
-                    .body(resource);
+                    .body(body);
         }
 
-        // ── Range request: stream solo la porzione richiesta ──────────────────
+        // ── Partial Content (206) ─────────────────────────────────────────────
         HttpRange range  = ranges.get(0);
         long start  = range.getRangeStart(fileSize);
         long end    = range.getRangeEnd(fileSize);
         long length = end - start + 1;
 
-        // StreamingResponseBody scrive direttamente sull'OutputStream HTTP —
-        // nessun buffer in memoria, funziona anche per file da decine di GB
-        StreamingResponseBody body = outputStream -> {
+        StreamingResponseBody body = out -> {
             try (InputStream is = Files.newInputStream(filePath)) {
                 long toSkip = start;
                 while (toSkip > 0) {
-                    long skipped = is.skip(toSkip);
-                    if (skipped <= 0) break;
-                    toSkip -= skipped;
+                    long n = is.skip(toSkip);
+                    if (n <= 0) break;
+                    toSkip -= n;
                 }
-                byte[] buf = new byte[64 * 1024]; // 64 KB per chunk
+                byte[] buf = new byte[BUFFER_SIZE];
                 long remaining = length;
                 int read;
                 while (remaining > 0
                         && (read = is.read(buf, 0, (int) Math.min(buf.length, remaining))) != -1) {
-                    outputStream.write(buf, 0, read);
+                    out.write(buf, 0, read);
                     remaining -= read;
                 }
             }
         };
 
-        String contentRange = "bytes " + start + "-" + end + "/" + fileSize;
-
         return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
                 .header(HttpHeaders.CONTENT_DISPOSITION, disp)
                 .header(HttpHeaders.ACCEPT_RANGES, "bytes")
-                .header(HttpHeaders.CONTENT_RANGE, contentRange)
+                .header(HttpHeaders.CONTENT_RANGE, "bytes " + start + "-" + end + "/" + fileSize)
                 .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(length))
                 .contentType(MediaType.parseMediaType(mime))
                 .body(body);
