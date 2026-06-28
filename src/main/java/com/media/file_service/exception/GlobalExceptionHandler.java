@@ -2,6 +2,7 @@ package com.media.file_service.exception;
 
 import com.media.file_service.model.ErrorResponse;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -49,7 +50,10 @@ public class GlobalExceptionHandler {
     }
 
     private ResponseEntity<ErrorResponse> build(HttpStatus status, String message) {
+        // Forza esplicitamente application/json per evitare conflitti con
+        // Content-Type già impostati dal controller (es. video/mp4 da FilePreviewController)
         return ResponseEntity.status(status)
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(new ErrorResponse(status.value(), message, LocalDateTime.now()));
     }
 }
